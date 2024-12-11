@@ -29,11 +29,24 @@
         .key.active {
             background-color: #ddd;
         }
+        .controls {
+            margin: 20px;
+        }
+        .recording {
+            color: red;
+            font-weight: bold;
+        }
     </style>
 </head>
 <body>
-    <input type="file" id="noteFile" accept=".txt">
-    <button onclick="playFromFile()">재생</button>
+    <div class="controls">
+        <input type="file" id="noteFile" accept=".txt">
+        <button onclick="playFromFile()">재생</button>
+        <button id="recordButton">녹음 시작</button>
+        <button id="downloadTxt" disabled>TXT 다운로드</button>
+        <button id="downloadMp3" disabled>MP3 다운로드</button>
+        <span id="recordingStatus"></span>
+    </div>
     <div class="piano" id="piano"></div>
 
     <script>
@@ -41,7 +54,7 @@
         const blackNotes = ['C#', 'D#', 'F#', 'G#', 'A#'];
         const piano = document.getElementById('piano');
         
-        // 여러 옥��브의 피아노 건반 생성
+        // 여러 옥타브의 피아노 건반 생성
         for (let octave = 3; octave <= 5; octave++) {  // 3옥타브부터 5옥타브까지 생성
             notes.forEach((note, index) => {
                 // 흰 건반 생성
@@ -76,6 +89,70 @@
 
         // 오디오 컨텍스트 생성
         const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+
+        // 녹음 관련 변수들
+        let mediaRecorder;
+        let audioChunks = [];
+        let isRecording = false;
+        let recordedNotes = [];
+        let recordStartTime;
+
+        // 녹음 버튼 이벤트
+        document.getElementById('recordButton').addEventListener('click', toggleRecording);
+
+        // 녹음 시작/중지 함수
+        async function toggleRecording() {
+            const recordButton = document.getElementById('recordButton');
+            const recordingStatus = document.getElementById('recordingStatus');
+            const downloadTxtBtn = document.getElementById('downloadTxt');
+            const downloadMp3Btn = document.getElementById('downloadMp3');
+
+            if (!isRecording) {
+                // 녹음 시작
+                isRecording = true;
+                recordedNotes = [];
+                recordStartTime = Date.now();
+                recordButton.textContent = '녹음 중지';
+                recordingStatus.textContent = '녹음 중...';
+                recordingStatus.className = 'recording';
+                
+                // 오디오 녹음 시작
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                mediaRecorder = new MediaRecorder(stream);
+                audioChunks = [];
+
+                mediaRecorder.ondataavailable = (event) => {
+                    audioChunks.push(event.data);
+                };
+
+                mediaRecorder.start();
+            } else {
+                // 녹음 중지
+                isRecording = false;
+                recordButton.textContent = '녹음 시작';
+                recordingStatus.textContent = '녹음 완료';
+                recordingStatus.className = '';
+                
+                // 오디오 녹음 중지
+                mediaRecorder.stop();
+                mediaRecorder.onstop = async () => {
+                    const audioBlob = new Blob(audioChunks, { type: 'audio/mp3' });
+                    const audioUrl = URL.createObjectURL(audioBlob);
+                    
+                    // 다운로드 버튼 활성화
+                    downloadTxtBtn.disabled = false;
+                    downloadMp3Btn.disabled = false;
+                    
+                    // MP3 다운로드 이벤트 설정
+                    downloadMp3Btn.onclick = () => {
+                        const a = document.createElement('a');
+                        a.href = audioUrl;
+                        a.download = 'recorded_piano.mp3';
+                        a.click();
+                    };
+                };
+            }
+        }
 
         function playNote(note, duration = 500) {
             const oscillator = audioContext.createOscillator();
@@ -116,6 +193,12 @@
                 oscillator.stop();
                 key.classList.remove('active');
             }, duration);
+
+            // 녹음 중일 때 노트 기록
+            if (isRecording) {
+                const timeStamp = Date.now() - recordStartTime;
+                recordedNotes.push(`${note}|${duration}`);
+            }
         }
 
         function playFromFile() {
@@ -223,6 +306,17 @@
                     keyElement.classList.remove('active');
                 }
             });
+        });
+
+        // TXT 파일 다운로드
+        document.getElementById('downloadTxt').addEventListener('click', () => {
+            const txtContent = recordedNotes.join('\n');
+            const blob = new Blob([txtContent], { type: 'text/plain' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'recorded_notes.txt';
+            a.click();
         });
     </script>
 </body>
